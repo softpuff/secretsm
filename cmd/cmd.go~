@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"secretsm/sm"
+	"github.com/secretsm/sm"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
