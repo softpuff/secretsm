@@ -42,10 +42,14 @@ func GetSecretValue(sess *session.Session, s string, raw bool) (map[string]inter
 
 	var secretMap map[string]interface{}
 	json.Unmarshal([]byte(*secretV.SecretString), &secretMap)
+	return secretMap, nil
+
+}
+
+func PrintSecretValue(secretMap map[string]interface{}) {
 	for k, v := range secretMap {
 		fmt.Printf("%s: %v\n", k, v)
 	}
-	return secretMap, nil
 
 }
 
@@ -131,4 +135,57 @@ func (s secretsByName) Less(i, j int) bool {
 }
 func (s secretsByName) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
+}
+
+func UpdateSecretValue(sess *session.Session, s string, add map[string]string, remove []string) (map[string]interface{}, error) {
+	secret, err := GetSecretValue(sess, s, false)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range add {
+		if _, ok := secret[k]; ok {
+			secret[k] = v
+		} else {
+			fmt.Printf("Key %s doesn't exist\n", k)
+		}
+
+	}
+	for _, d := range remove {
+		if _, ok := secret[d]; ok {
+			delete(secret, d)
+		} else {
+			fmt.Printf("Key %s doesn't exist\n", d)
+		}
+	}
+	return secret, nil
+}
+
+func PutSecretValue(sess *session.Session, s string, secretMap map[string]interface{}) error {
+	secretByte, err := json.Marshal(secretMap)
+	if err != nil {
+		return fmt.Errorf("Error marshalling secret: %v", err)
+	}
+	svc := secretsmanager.New(sess)
+
+	secretString := string(secretByte)
+	input := &secretsmanager.PutSecretValueInput{
+		SecretId:     aws.String(s),
+		SecretString: aws.String(secretString),
+	}
+
+	out, err := svc.PutSecretValue(input)
+	if err != nil {
+		return fmt.Errorf("Puting secret %s error: %v", s, err)
+	}
+	fmt.Printf("%s output: %s", s, out.String())
+	return nil
+}
+
+func ListSecretKeys(sess *session.Session, s string) (keysL []string) {
+	secret, _ := GetSecretValue(sess, s, false)
+	for k := range secret {
+		keysL = append(keysL, k)
+	}
+	return keysL
 }
