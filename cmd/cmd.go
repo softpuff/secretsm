@@ -14,6 +14,9 @@ import (
 
 var debug bool
 var region string
+var (
+	c = sm.NewConfig(region)
+)
 
 var (
 	SMCMD = &cobra.Command{
@@ -28,11 +31,7 @@ var (
 		Short: "secretsm get <secretName>",
 		Args:  cobra.MaximumNArgs(1),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-			sess, err := sm.CreateAWSSession(region)
-			if err != nil {
-				log.Fatalf("Error creating session: %v\n", err)
-			}
-			secretNames, err := sm.ListSecretsForComplete(sess)
+			secretNames, err := c.ListSecretsForComplete()
 			if err != nil {
 				log.Fatalf("Error returning list of secrets: %v\n", err)
 			}
@@ -60,8 +59,7 @@ var (
 		Args: cobra.MinimumNArgs(1),
 		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 			secret := viper.GetString("secret-name")
-			sess, _ := sm.CreateAWSSession(region)
-			return sm.ListSecretKeys(sess, secret), cobra.ShellCompDirectiveNoFileComp
+			return sm.ListSecretKeys(c, secret), cobra.ShellCompDirectiveNoFileComp
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			secret := viper.GetString("secret-name")
@@ -69,17 +67,13 @@ var (
 			if err != nil {
 				log.Fatalf("Error parsing args: %v\n", err)
 			}
-			sess, err := sm.CreateAWSSession(region)
-			if err != nil {
-				log.Fatal(err)
-			}
-			sv, err := sm.UpdateSecretValue(sess, secret, add, remove)
+			sv, err := sm.UpdateSecretValue(c, secret, add, remove)
 			if err != nil {
 				log.Fatalf("Error setting secret: %v\n", err)
 			}
 			// sm.PrintSecretValue(sv)
 
-			sm.PutSecretValue(sess, secret, sv)
+			sm.PutSecretValue(c, secret, sv)
 		},
 	}
 )
@@ -114,11 +108,7 @@ func init() {
 	viper.BindEnv("region", "AWS_REGION")
 
 	setCMD.RegisterFlagCompletionFunc("secret-name", func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		sess, err := sm.CreateAWSSession(region)
-		if err != nil {
-			log.Fatalf("Error creating session: %v\n", err)
-		}
-		secretNames, err := sm.ListSecretsForComplete(sess)
+		secretNames, err := c.ListSecretsForComplete()
 		if err != nil {
 			log.Fatalf("Error returning list of secrets: %v\n", err)
 		}
@@ -135,18 +125,14 @@ func initConfig() {
 }
 
 func listSecrets(maxResults int64, sort bool) {
-	sess, err := sm.CreateAWSSession(region)
-	if err != nil {
-		log.Fatalf("Error creating session: %v\n", err)
-	}
 	var nt *string
-	secrets, nextToken, err := sm.ListSecrets(sess, nt, maxResults)
+	secrets, nextToken, err := c.ListSecrets(nt, maxResults)
 	if err != nil {
 		log.Fatalf("Listing secrets error: %v\n", err)
 	}
 	// sm.PrintSecretList(secrets, debug, sort)
 	for nextToken != nil {
-		secrets2, nt, err := sm.ListSecrets(sess, nextToken, maxResults)
+		secrets2, nt, err := c.ListSecrets(nextToken, maxResults)
 		if err != nil {
 			log.Fatalf("Listing secrets error: %v\n", err)
 		}
@@ -161,11 +147,7 @@ func listSecrets(maxResults int64, sort bool) {
 }
 
 func getSecretValue(s string, raw bool) {
-	sess, err := sm.CreateAWSSession(region)
-	if err != nil {
-		log.Fatalf("Error creating session: %v\n", err)
-	}
-	sv, err := sm.GetSecretValue(sess, s, raw)
+	sv, err := c.GetSecretValue(s, raw)
 	if err != nil {
 		log.Fatalf("Getting secret value: %v\n", err)
 	}

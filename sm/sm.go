@@ -15,6 +15,19 @@ import (
 
 const format = "%v\t%v\t\n"
 
+type Config struct {
+	sess   *session.Session
+	region *string
+}
+
+func NewConfig(region string) (c Config) {
+	c.region = &region
+	c.sess = session.Must(session.NewSession(&aws.Config{
+		Region: c.region,
+	}))
+	return c
+}
+
 func CreateAWSSession(region string) (*session.Session, error) {
 	sess, err := session.NewSession(&aws.Config{
 		Region: &region,
@@ -25,8 +38,8 @@ func CreateAWSSession(region string) (*session.Session, error) {
 	return sess, nil
 }
 
-func GetSecretValue(sess *session.Session, s string, raw bool) (map[string]interface{}, error) {
-	svc := secretsmanager.New(sess)
+func (c Config) GetSecretValue(s string, raw bool) (map[string]interface{}, error) {
+	svc := secretsmanager.New(c.sess)
 	input := &secretsmanager.GetSecretValueInput{
 		SecretId: &s,
 	}
@@ -53,8 +66,8 @@ func PrintSecretValue(secretMap map[string]interface{}) {
 
 }
 
-func ListSecrets(sess *session.Session, nextToken *string, maxResults int64) ([]*secretsmanager.SecretListEntry, *string, error) {
-	svc := secretsmanager.New(sess)
+func (c Config) ListSecrets(nextToken *string, maxResults int64) ([]*secretsmanager.SecretListEntry, *string, error) {
+	svc := secretsmanager.New(c.sess)
 	input := &secretsmanager.ListSecretsInput{
 		MaxResults: &maxResults,
 		NextToken:  nextToken,
@@ -83,15 +96,15 @@ func ListSecrets(sess *session.Session, nextToken *string, maxResults int64) ([]
 	return result.SecretList, result.NextToken, nil
 }
 
-func ListSecretsForComplete(sess *session.Session) ([]string, error) {
+func (c Config) ListSecretsForComplete() ([]string, error) {
 	var maxResults int64 = 100
 	var nextToken *string
-	result, nextToken, err := ListSecrets(sess, nextToken, maxResults)
+	result, nextToken, err := c.ListSecrets(nextToken, maxResults)
 	if err != nil {
 		return nil, err
 	}
 	for nextToken != nil {
-		secrets, nt, err := ListSecrets(sess, nextToken, maxResults)
+		secrets, nt, err := c.ListSecrets(nextToken, maxResults)
 		if err != nil {
 			return nil, err
 		}
@@ -137,36 +150,35 @@ func (s secretsByName) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func UpdateSecretValue(sess *session.Session, s string, add map[string]string, remove []string) (map[string]interface{}, error) {
-	secret, err := GetSecretValue(sess, s, false)
+func UpdateSecretValue(c Config, s string, add map[string]string, remove []string) (map[string]interface{}, error) {
+	secret, err := c.GetSecretValue(s, false)
 	if err != nil {
 		return nil, err
 	}
 
 	for k, v := range add {
-		if _, ok := secret[k]; ok {
-			secret[k] = v
-		} else {
-			fmt.Printf("Key %s doesn't exist\n", k)
+		if _, ok := secret[k]; !ok {
+			fmt.Printf("Key %s doesn't exist, adding it\n", k)
 		}
+		secret[k] = v
 
 	}
 	for _, d := range remove {
 		if _, ok := secret[d]; ok {
 			delete(secret, d)
 		} else {
-			fmt.Printf("Key %s doesn't exist\n", d)
+			return nil, fmt.Errorf("Key %s doesn't exist, can't be deleted", d)
 		}
 	}
 	return secret, nil
 }
 
-func PutSecretValue(sess *session.Session, s string, secretMap map[string]interface{}) error {
+func PutSecretValue(c Config, s string, secretMap map[string]interface{}) error {
 	secretByte, err := json.Marshal(secretMap)
 	if err != nil {
 		return fmt.Errorf("Error marshalling secret: %v", err)
 	}
-	svc := secretsmanager.New(sess)
+	svc := secretsmanager.New(c.sess)
 
 	secretString := string(secretByte)
 	input := &secretsmanager.PutSecretValueInput{
@@ -182,8 +194,8 @@ func PutSecretValue(sess *session.Session, s string, secretMap map[string]interf
 	return nil
 }
 
-func ListSecretKeys(sess *session.Session, s string) (keysL []string) {
-	secret, _ := GetSecretValue(sess, s, false)
+func ListSecretKeys(c Config, s string) (keysL []string) {
+	secret, _ := c.GetSecretValue(s, false)
 	for k := range secret {
 		keysL = append(keysL, k)
 	}
