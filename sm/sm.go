@@ -224,9 +224,8 @@ func convertMap(a map[string]interface{}) map[string]string {
 }
 
 func PrintDiff(s1, s2 string, diff map[string]string) {
-	fmt.Println(strings.Repeat("*", 100))
 	tw := new(tabwriter.Writer).Init(os.Stdout, 0, 8, 2, ' ', 0)
-	fmt.Fprintf(tw, format, s1, s2)
+	fmt.Fprintf(tw, format, fmt.Sprintf("%s =>", s1), s2)
 
 	for k, v := range diff {
 		fmt.Fprintf(tw, format, k, v)

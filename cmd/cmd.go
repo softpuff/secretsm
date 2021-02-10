@@ -109,6 +109,7 @@ var (
 			}
 			diff1 := sm.CompareSecrets(s1, s2)
 			diff2 := sm.CompareSecrets(s2, s1)
+			fmt.Println(strings.Repeat("-", 100))
 			sm.PrintDiff(secret1, secret2, diff1)
 			sm.PrintDiff(secret2, secret1, diff2)
 
