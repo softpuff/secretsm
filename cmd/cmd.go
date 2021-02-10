@@ -8,9 +8,17 @@ import (
 
 	"github.com/softpuff/secretsm/sm"
 
+	"github.com/softpuff/showtype/displaytype"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
+
+type outOptions struct {
+	debug      bool
+	sorted     bool
+	maxResults int
+	raw        bool
+}
 
 var debug bool
 var region string
@@ -47,7 +55,8 @@ var (
 			case argsNum > 0:
 				s := args[0]
 				raw := viper.GetBool("raw")
-				getSecretValue(s, raw)
+				verbose := viper.GetBool("verbose")
+				getSecretValue(s, raw, verbose)
 			}
 		},
 	}
@@ -79,6 +88,35 @@ var (
 )
 
 var (
+	compareCMD = &cobra.Command{
+		Use:  "compare",
+		Args: cobra.ExactArgs(2),
+		ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+			secretNames, err := c.ListSecretsForComplete()
+			if err != nil {
+				log.Fatalf("Error returning list of secrets: %v\n", err)
+			}
+			return secretNames, cobra.ShellCompDirectiveNoFileComp
+		},
+		Run: func(cmd *cobra.Command, args []string) {
+			secret1 := args[0]
+			secret2 := args[1]
+
+			s1, err := c.GetSecretValue(secret1, false)
+			s2, err := c.GetSecretValue(secret2, false)
+			if err != nil {
+				log.Fatalf(err.Error())
+			}
+			diff1 := sm.CompareSecrets(s1, s2)
+			diff2 := sm.CompareSecrets(s2, s1)
+			sm.PrintDiff(secret1, secret2, diff1)
+			sm.PrintDiff(secret2, secret1, diff2)
+
+		},
+	}
+)
+
+var (
 	completionCmd = &cobra.Command{
 		Use:   "completion",
 		Short: "Generates bash completion script",
@@ -96,14 +134,17 @@ func init() {
 	SMCMD.AddCommand(completionCmd)
 	SMCMD.AddCommand(getCMD)
 	SMCMD.AddCommand(setCMD)
+	SMCMD.AddCommand(compareCMD)
 	getCMD.Flags().BoolP("raw", "r", false, "raw secret output")
 	getCMD.Flags().BoolP("sort", "s", false, "sort list by name")
 	getCMD.Flags().Int64P("max-results", "m", 100, "max results returned")
 	setCMD.Flags().StringP("secret-name", "", "", "name of the secret to edit")
+	getCMD.Flags().BoolP("verbose", "v", false, "verbose output")
 	viper.BindPFlag("secret-name", setCMD.Flags().Lookup("secret-name"))
 	viper.BindPFlag("sort", getCMD.Flags().Lookup("sort"))
 	viper.BindPFlag("max-results", getCMD.Flags().Lookup("max-results"))
 	viper.BindPFlag("raw", getCMD.Flags().Lookup("raw"))
+	viper.BindPFlag("verbose", getCMD.Flags().Lookup("verbose"))
 
 	viper.BindEnv("region", "AWS_REGION")
 
@@ -146,12 +187,17 @@ func listSecrets(maxResults int64, sort bool) {
 
 }
 
-func getSecretValue(s string, raw bool) {
+func getSecretValue(s string, raw, verbose bool) {
 	sv, err := c.GetSecretValue(s, raw)
 	if err != nil {
 		log.Fatalf("Getting secret value: %v\n", err)
 	}
 
+	if verbose {
+
+		displaytype.Display("secretMap", sv)
+
+	}
 	sm.PrintSecretValue(sv)
 
 }

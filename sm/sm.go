@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -200,4 +201,36 @@ func ListSecretKeys(c Config, s string) (keysL []string) {
 		keysL = append(keysL, k)
 	}
 	return keysL
+}
+
+func CompareSecrets(a, b map[string]interface{}) map[string]string {
+	diff := make(map[string]string)
+	am := convertMap(a)
+	bm := convertMap(b)
+	for k, v := range a {
+		if v != b[k] {
+			diff[fmt.Sprintf("%s=%s", k, am[k])] = fmt.Sprintf("%s=%s", k, bm[k])
+		}
+	}
+	return diff
+}
+
+func convertMap(a map[string]interface{}) map[string]string {
+	b := make(map[string]string)
+	for k, v := range a {
+		b[k] = v.(string)
+	}
+	return b
+}
+
+func PrintDiff(s1, s2 string, diff map[string]string) {
+	fmt.Println(strings.Repeat("*", 100))
+	tw := new(tabwriter.Writer).Init(os.Stdout, 0, 8, 2, ' ', 0)
+	fmt.Fprintf(tw, format, s1, s2)
+
+	for k, v := range diff {
+		fmt.Fprintf(tw, format, k, v)
+	}
+	tw.Flush()
+	fmt.Println(strings.Repeat("-", 100))
 }
