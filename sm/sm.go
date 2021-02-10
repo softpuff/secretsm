@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -14,6 +15,19 @@ import (
 )
 
 const format = "%v\t%v\t\n"
+
+type Config struct {
+	sess   *session.Session
+	region *string
+}
+
+func NewConfig(region string) (c Config) {
+	c.region = &region
+	c.sess = session.Must(session.NewSession(&aws.Config{
+		Region: c.region,
+	}))
+	return c
+}
 
 func CreateAWSSession(region string) (*session.Session, error) {
 	sess, err := session.NewSession(&aws.Config{
@@ -25,8 +39,8 @@ func CreateAWSSession(region string) (*session.Session, error) {
 	return sess, nil
 }
 
-func GetSecretValue(sess *session.Session, s string, raw bool) (map[string]interface{}, error) {
-	svc := secretsmanager.New(sess)
+func (c Config) GetSecretValue(s string, raw bool) (map[string]interface{}, error) {
+	svc := secretsmanager.New(c.sess)
 	input := &secretsmanager.GetSecretValueInput{
 		SecretId: &s,
 	}
@@ -42,15 +56,19 @@ func GetSecretValue(sess *session.Session, s string, raw bool) (map[string]inter
 
 	var secretMap map[string]interface{}
 	json.Unmarshal([]byte(*secretV.SecretString), &secretMap)
-	for k, v := range secretMap {
-		fmt.Printf("%s: %v\n", k, v)
-	}
 	return secretMap, nil
 
 }
 
-func ListSecrets(sess *session.Session, nextToken *string, maxResults int64) ([]*secretsmanager.SecretListEntry, *string, error) {
-	svc := secretsmanager.New(sess)
+func PrintSecretValue(secretMap map[string]interface{}) {
+	for k, v := range secretMap {
+		fmt.Printf("%s: %v\n", k, v)
+	}
+
+}
+
+func (c Config) ListSecrets(nextToken *string, maxResults int64) ([]*secretsmanager.SecretListEntry, *string, error) {
+	svc := secretsmanager.New(c.sess)
 	input := &secretsmanager.ListSecretsInput{
 		MaxResults: &maxResults,
 		NextToken:  nextToken,
@@ -79,15 +97,15 @@ func ListSecrets(sess *session.Session, nextToken *string, maxResults int64) ([]
 	return result.SecretList, result.NextToken, nil
 }
 
-func ListSecretsForComplete(sess *session.Session) ([]string, error) {
+func (c Config) ListSecretsForComplete() ([]string, error) {
 	var maxResults int64 = 100
 	var nextToken *string
-	result, nextToken, err := ListSecrets(sess, nextToken, maxResults)
+	result, nextToken, err := c.ListSecrets(nextToken, maxResults)
 	if err != nil {
 		return nil, err
 	}
 	for nextToken != nil {
-		secrets, nt, err := ListSecrets(sess, nextToken, maxResults)
+		secrets, nt, err := c.ListSecrets(nextToken, maxResults)
 		if err != nil {
 			return nil, err
 		}
@@ -131,4 +149,88 @@ func (s secretsByName) Less(i, j int) bool {
 }
 func (s secretsByName) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
+}
+
+func UpdateSecretValue(c Config, s string, add map[string]string, remove []string) (map[string]interface{}, error) {
+	secret, err := c.GetSecretValue(s, false)
+	if err != nil {
+		return nil, err
+	}
+
+	for k, v := range add {
+		if _, ok := secret[k]; !ok {
+			fmt.Printf("Key %s doesn't exist, adding it\n", k)
+		}
+		secret[k] = v
+
+	}
+	for _, d := range remove {
+		if _, ok := secret[d]; ok {
+			delete(secret, d)
+		} else {
+			return nil, fmt.Errorf("Key %s doesn't exist, can't be deleted", d)
+		}
+	}
+	return secret, nil
+}
+
+func PutSecretValue(c Config, s string, secretMap map[string]interface{}) error {
+	secretByte, err := json.Marshal(secretMap)
+	if err != nil {
+		return fmt.Errorf("Error marshalling secret: %v", err)
+	}
+	svc := secretsmanager.New(c.sess)
+
+	secretString := string(secretByte)
+	input := &secretsmanager.PutSecretValueInput{
+		SecretId:     aws.String(s),
+		SecretString: aws.String(secretString),
+	}
+
+	out, err := svc.PutSecretValue(input)
+	if err != nil {
+		return fmt.Errorf("Puting secret %s error: %v", s, err)
+	}
+	fmt.Printf("%s output: %s", s, out.String())
+	return nil
+}
+
+func ListSecretKeys(c Config, s string) (keysL []string) {
+	secret, _ := c.GetSecretValue(s, false)
+	for k := range secret {
+		keysL = append(keysL, k)
+	}
+	return keysL
+}
+
+func CompareSecrets(a, b map[string]interface{}) map[string]string {
+	diff := make(map[string]string)
+	am := convertMap(a)
+	bm := convertMap(b)
+	for k, v := range a {
+		if v != b[k] {
+			diff[fmt.Sprintf("%s=%s", k, am[k])] = fmt.Sprintf("%s=%s", k, bm[k])
+		}
+	}
+	return diff
+}
+
+func convertMap(a map[string]interface{}) map[string]string {
+	b := make(map[string]string)
+	for k, v := range a {
+		b[k] = v.(string)
+	}
+	return b
+}
+
+func PrintDiff(s1, s2 string, diff map[string]string) {
+	fmt.Println(strings.Repeat("*", 100))
+	tw := new(tabwriter.Writer).Init(os.Stdout, 0, 8, 2, ' ', 0)
+	fmt.Fprintf(tw, format, s1, s2)
+
+	for k, v := range diff {
+		fmt.Fprintf(tw, format, k, v)
+	}
+	tw.Flush()
+	fmt.Println(strings.Repeat("-", 100))
 }
