@@ -29,16 +29,6 @@ func NewConfig(region string) (c Config) {
 	return c
 }
 
-func CreateAWSSession(region string) (*session.Session, error) {
-	sess, err := session.NewSession(&aws.Config{
-		Region: &region,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return sess, nil
-}
-
 func (c Config) GetSecretValue(s string, raw bool) (map[string]interface{}, error) {
 	svc := secretsmanager.New(c.sess)
 	input := &secretsmanager.GetSecretValueInput{
